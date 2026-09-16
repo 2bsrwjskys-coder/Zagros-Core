@@ -3,11 +3,7 @@
 Zagros Network'ün düğüm yazılımı: konsensüs, yürütücü, işlem havuzu, ağ, RPC ve
 köprü habercisi. Rust ile yazılmıştır, EVM uyumludur.
 
-## 🏛️ Zagros nedir?
-
-<p align="center">
-  <img src="assets/zagros-logo.png" width="160" alt="Zagros Network">
-</p>
+## <img src="assets/zagros-logo.png" height="30" alt="" valign="middle"> Zagros nedir?
 
 Zagros, yerli parası **yalnızca altınla alınıp satılan ve fiyatı zincir içi
 yerleşik havuzunda oluşan ilk ve tek Layer-1**'dir. ZAGROS yalnız ZERENYA ile
