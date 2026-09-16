@@ -1,0 +1,395 @@
+# Zagros Network - Example Configuration File
+# Copy this file to config.toml and customize as needed
+
+# 🛡️ CONSENSUS-BREAKING UPGRADE GATE. Uncomment and set this ONLY when you
+# have deliberately coordinated a simultaneous fleet-wide upgrade to the
+# executor state-transition version shown in the node's startup error message
+# (zagros_types::EXECUTOR_STATE_TRANSITION_VERSION). The node REFUSES TO START
+# (fail-closed) if the on-disk state was produced by an older executor version
+# and this field does not exactly match the running binary's version - this is
+# not a boolean "I acknowledge upgrades forever" switch: every future
+# consensus-breaking bump requires you to edit this value again. See
+# PRODUCTION-HARDENING-REPORT.md's "Validator Upgrade Prosedürü" section
+# before touching this on a live network.
+# acknowledged_executor_state_version = 4
+
+[network]
+# P2P listen address
+listen_addr = "/ip4/0.0.0.0/tcp/30303"
+
+# Bootstrap nodes (add peer addresses here)
+bootstrap_nodes = []
+
+# Maximum number of peers
+max_peers = 50
+
+# Enable P2P networking. `false` iken (`is_proposer` NE OLURSA OLSUN) bu
+# node HER ZAMAN kendi bloğunu üretir - P2P'siz tek-node modu, bu projenin
+# bugüne kadarki tek çalışma şekli. `true` yapıldığında aşağıdaki
+# `is_proposer` GERÇEK bir anlam kazanır.
+# 🚨 KRİTİK: varsayılan olarak `false` bırakın. `true` + `is_proposer =
+# false` (aşağıdaki varsayılan) ile bu dosyayı olduğu gibi kopyalayıp
+# çalıştıran YENİ bir node - bootstrap_nodes boş, kimse proposer değil -
+# SESSİZCE hiçbir blok üretmez/almaz (bağımsız denetimde bulundu, 2026-08-09).
+# Sadece gerçek follower node'lar eklemeye hazır olduğunuzda, EN AZ bir
+# node'u `is_proposer = true` yaparak birlikte açın.
+enable_p2p = false
+
+# Network ID (Chain ID)
+network_id = 21072026
+
+# 🛡️ `enable_p2p = true` iken, ağdaki TAM OLARAK BİR node bunu `true`
+# yapmalı - o node blok üretir ve gossipler. Diğer TÜM node'lar `false`
+# KALMALI (bkz. NetworkConfig'in kendi doc yorumu, zagros-types/src/config.rs).
+# YANLIŞ yapılandırma (birden fazla `true`) sessiz bir chain fork'una yol açar.
+is_proposer = false
+
+# Node'un kalıcı ed25519 P2P kimliğinin diskte saklandığı yol - yoksa ilk
+# açılışta üretilir.
+node_key_path = "./zagros-data/network/node_key"
+
+# mDNS yerel-ağ keşfi - localhost/LAN testinde kullanışlı, bağımsız
+# sunucular arası (internet) İŞE YARAMAZ. Gerçek çoklu-sunucu dağıtımda
+# false yapın.
+mdns_enabled = true
+
+# Bir blok-senkronizasyon yanıtında dönülecek azami blok sayısı.
+sync_batch_size = 500
+
+# NOT: yukarıdaki TÜM P2P alanları `zagros-cli`'ye kablolanmış durumda.
+
+[consensus]
+# 🧹 G13: validator_count / block_time_ms / epoch_length / enable_dpos /
+# min_validator_stake anahtarları KALDIRILDI — konsensüs parametrelerinin tek
+# doğruluk kaynağı zincir-üstü ChainParams (genesis'te yazılır, governance ile
+# değişir). Eski config dosyalarında bu anahtarlar dursa bile yok sayılır.
+
+# 🏛️ CANLI/WIRED alan: %20'lik validator ödül payının (protokol gelirinin
+# %80'i stakerlara, %20'si aktif validator'e - bkz. STAKER_REWARD_BPS/
+# VALIDATOR_REWARD_BPS) gideceği adres. Bugünkü tek-node mimarisinde bu SABİT
+# tek bir adres - bu node'u işleten kişinin kendi adresi olmalı. Boş bırakılırsa
+# validator ödül payı devre dışı kalır, TÜM ödül stakerlara gider.
+block_producer_address = ""
+
+[storage]
+# Database path (RocksDB state dizini)
+db_path = "./zagros-data/state"
+
+# Cache size in MB (RocksDB'nin KENDİ blok cache'i)
+cache_size_mb = 1024
+
+# Bellek-içi hesap cache'inin (deserialize edilmiş AccountState nesneleri -
+# yalnızca chain hesapları değil, Receipt_/tx_body_/block_ gibi TÜM tarihsel
+# bookkeeping kayıtları DAHİL) üst sınırı. Aşılınca henüz flush edilmemiş
+# olmayan girdiler tahliye edilir - sınırsız RAM büyümesini önler.
+max_account_cache_entries = 2000000
+
+# K2: Tarihsel dekont (Receipt) budamayı aç. Kapalıyken RocksDB sınırsız büyür
+# (ölçüldü: 1.000 işlem/sn karışık [transfer+swap] sürekli yükte ~30 TB/yıl -
+# bkz. proje geçmişi); açıkken bu blok derinliğinin ötesindeki dekontlar silinir.
+# Chain state (hesap bakiyeleri) ETKİLENMEZ - sadece tarihsel execution kayıtları.
+# Gerçek/sürdürülebilir bir dağıtım için ÖNERİLEN varsayılan artık `true` -
+# `false` sadece kısa süreli test/geliştirme node'ları için mantıklı.
+enable_pruning = true
+
+# 🚨 BUDAMA BİR KUYRUK BOŞALTMA İŞİDİR (2026-08-27 soak ölçümü).
+# Silme hızı = prune_batch_limit / pruning_interval  (blok başına işlem).
+# Bu hız, YARATMA hızını (blok başına işlem sayısı) AŞMAZSA kuyruk hiç bitmez
+# ve budama açık olmasına rağmen disk sınırsız büyür.
+#
+# Ölçülen maliyet: budanan işlem başına ~10,4 µs (iki anahtar silme).
+# Ölçülen en dolu blok: 602 işlem (256 KB `max_block_bytes` sınırı).
+#
+# Aşağıdaki ikili blok başına 1.000 işlemlik silme kapasitesi verir (~10 ms,
+# yani 500 ms'lik blok tabanının %2'si) ve her yükte yetişmeyi garanti eder.
+# SIK VE KÜÇÜK partiler tercih edilir: aynı ortalama hız için "50 blokta bir
+# 30.000" ayarı 312 ms'lik görünür bir blok takılması yaratırdı.
+pruning_interval = 1
+prune_batch_limit = 1000
+
+# Bu blok derinliğinden eski blokların dekontları budanır (saklama derinliği).
+# ⚠️ Bunu SÜREYE çevirerek düşünün: ~1,2 blok/sn'de 100.000 blok ≈ 23 saat.
+# Bu süreden eski `eth_getTransactionReceipt`/`eth_getTransactionByHash`
+# sorguları ZİNCİRDEN dönmez - yalnızca harici arşivden (ZagrosRadar) döner.
+max_retained_blocks = 100000
+
+# ------------------------------------------------------------------------
+# 🛡️ BUDAMA BACKPRESSURE (ARŞİV KİLİDİ) - MAINNET'TE ZORUNLU
+# ------------------------------------------------------------------------
+# Bu dosya ayarlıysa düğüm, harici arşivcinin (ZagrosRadar,
+# `zagros_reportArchiveHeight` ile buraya yazar) BİLDİRDİĞİ yüksekliğin
+# ötesindeki hiçbir bloğu budamaz. Dosya yoksa/bozuksa 0 kabul edilir ve
+# HİÇBİR ŞEY budanmaz (güvenli bekleme).
+#
+# Ayarlanmazsa backpressure TAMAMEN atlanır: arşivci o sırada çökmüş olsa bile
+# düğüm geçmişi siler ve silinen dekont hiçbir node'da kalmaz, GERİ GELMEZ.
+# Bu yüzden `enable_pruning = true` + bu satır yoksa node BAŞLAMAYI REDDEDER;
+# arşivcisiz budamayı bilerek istiyorsanız aşağıdaki onay satırını yazın.
+archive_height_file = "./zagros-data/archive_height"
+
+# `zagros_reportArchiveHeight` için paylaşılan sır. Ayarlanmazsa metot tamamen
+# kapalıdır (yani arşiv yüksekliği HİÇ ilerlemez ve budama hiç ilerlemez).
+# Mainnet'te güçlü ve rastgele bir değer üretin.
+# archive_report_token = "buraya-uzun-rastgele-bir-sir"
+
+# Arşivcisi OLMAYAN tek başına bir düğüm için: geçmişi kalıcı olarak
+# kaybetmeyi bilerek kabul ettiğinizi belirtir. `archive_height_file`
+# ayarlıysa bu satır HİÇ okunmaz.
+# acknowledged_pruning_without_archive = true
+
+# --- items 6+7: RocksDB production tuning ---
+# Hepsi operatör kontrolünde - donanıma göre elle ayarlayın, otomatik
+# algılama YOK (bilinçli tasarım kararı). Aşağıdaki değerler makul üretim
+# varsayılanlarıdır, tek-validator küçük/orta ölçek için düşünülmüştür.
+
+# MemTable (yazma tamponu) boyutu (MB).
+write_buffer_size_mb = 64
+
+# Bellekte tutulan maksimum memtable sayısı.
+max_write_buffer_number = 3
+
+# Level-0 hedef SST dosya boyutu (MB).
+target_file_size_base_mb = 64
+
+# Aynı anda açık tutulacak maksimum dosya tanıtıcısı. -1 = RocksDB varsayılanı.
+max_open_files = -1
+
+# Bloom filtresi anahtar başına bit sayısı (nokta okumalarını hızlandırır).
+bloom_filter_bits_per_key = 10.0
+
+# RocksDB dahili istatistiklerini topla (küçük bir CPU maliyeti var).
+enable_statistics = false
+
+# Arka-plan flush/compaction iş parçacığı sayısı.
+max_background_jobs = 4
+
+# item 8: snapshot'ların (RocksDB checkpoint + metadata.json) yazılacağı kök dizin.
+snapshots_root = "./zagros-data/snapshots"
+
+# item 8 (devamı): otomatik periyodik snapshot aralığı (blok sayısı). 0 = kapalı
+# (varsayılan - yalnızca elle `zagros-cli snapshot create`). Mainnet öncesi
+# yedekleme/felaket-kurtarma için pozitif bir değer önerilir.
+snapshot_interval_blocks = 50000
+
+# Otomatik snapshot açıkken en fazla kaç snapshot saklanacağı - fazlası
+# (en eskiden başlayarak) otomatik silinir. 0 = hiç silme (sınırsız birikim).
+max_snapshots_to_retain = 3
+
+[rpc]
+# HTTP RPC address (Ethereum compatible port)
+http_addr = "0.0.0.0:8545"
+
+# WebSocket RPC address
+ws_addr = "0.0.0.0:8546"
+
+# Maximum concurrent connections (global; K5: HTTP + WS handshake'lerinde zorlanır)
+max_connections = 50000
+
+# RPC Ratelimit per IP (Y5: kayan-pencere / saniye - sınır patlaması engellenir)
+ip_rate_limit = 100
+
+# Enable HTTP RPC
+enable_http = true
+
+# Enable WebSocket RPC
+enable_ws = true
+
+# CORS allowed origins
+cors_origins = ["*"]
+
+# YÜKSEK #6 (Seçenek B): RPC application-layer timeout + WS idle koruması.
+# Bunlar TCP-seviyesi Slowloris'i (yavaş header/body akışı) ÇÖZMEZ - bu risk
+# için önerilen (bu projede ZORUNLU kılınmamış) operasyonel azaltma, node'un
+# ÖNÜNE bir ters proxy (nginx/Caddy/Envoy) koyup client_header_timeout/
+# client_body_timeout'u orada yapılandırmaktır. Bkz. AUDIT-VERIFICATION-AND-FIXES.md.
+
+# Salt-okunur/statik RPC metodları (eth_chainId, net_version, vb.) için üst süre (sn)
+light_method_timeout_secs = 3
+
+# State/RocksDB okuyan ama EVM çalıştırmayan metodlar için üst süre (sn)
+default_method_timeout_secs = 6
+
+# eth_call / eth_estimateGas (gerçek EVM yürütmesi) için üst süre (sn)
+evm_execution_timeout_secs = 10
+
+# Bir JSON-RPC batch isteğindeki toplam bekleme süresi tavanı (sn)
+max_batch_timeout_secs = 30
+
+# 🛡️ Tek bir JSON-RPC batch'indeki azami alt istek sayısı.
+# Gövde tavanı 2 MiB ve minimal bir çağrı ~60 bayt olduğundan, sınırsız bırakılsa
+# tek istek ~35.000 alt çağrı taşıyabilirdi - hepsi TEK bir bloklayan görevde
+# sırayla işlenir. `max_batch_timeout_secs` bunu ÇÖZMEZ: o yalnız İSTEMCİNİN
+# beklemesini keser; bloklayan görev durdurulamadığı için sunucu thread'i
+# çalışmaya devam eder. Küçük istekten büyük sunucu işi doğuran amplifikasyon.
+# 100, cüzdanların (ethers.js/MetaMask) tipik batch boyutlarının rahatça üstünde.
+max_batch_requests = 100
+
+# Sunucunun her açık WS bağlantısına ping gönderme aralığı (sn)
+ws_ping_interval_secs = 30
+
+# Bu süre boyunca WS'ten hiçbir mesaj (pong dahil) alınmazsa bağlantı kapatılır (sn)
+ws_pong_timeout_secs = 90
+
+# YÜKSEK #7: eth_call/eth_estimateGas ücretsiz/sınırsız EVM hesaplaması
+# sunuyordu (eskiden koşulsuz 30M gaz, kullanıcı beyanı hiç okunmuyordu).
+# Varsayımlar KASITLI OLARAK gerçek işlemlerin (Transaction::validate()) zaten
+# uyguladığı 10M gaz tavanıyla AYNI - hiçbir meşru simülasyon, gerçekte asla
+# gönderilemeyecek bir işlemi simüle etmeye ihtiyaç duymaz. Bkz.
+# AUDIT-VERIFICATION-AND-FIXES.md YÜKSEK #7.
+
+# eth_call için üst gas sınırı - kullanıcı beyanı (varsa) bu tavana KADAR
+# saygı görür, üstü sessizce bu tavana kırpılır (reddedilmez)
+eth_call_max_gas = 10000000
+
+# eth_estimateGas için üst gas sınırı (aynı gerekçe)
+eth_estimate_gas_max_gas = 10000000
+
+# eth_call/eth_estimateGas için eş zamanlı simülasyon tavanı - genel
+# max_connections'tan AYRI ve ondan DAHA SIKI, yalnızca CPU-ağır EVM
+# simülasyonlarını sınırlar
+max_parallel_evm_simulations = 32
+
+[gas]
+# Sabit gas ücreti hedefi - 18-decimal HAM skala, ZERENYA cinsinden (1 ZERENYA
+# = 1 troy ons altın). 0.0000125 ZERENYA = 12_500_000_000_000
+# sabit ücretin (ZSC $1'a sabitken) genesis fiyat oranındaki karşılığı.
+# Wired: GasCalculator::with_target. Sistemde dolar/fiyat oracle'ı YOK - bu
+# değer salt havuz oranından (Pool_Zagros/Pool_Zerenya) ham ZAGROS'a çevrilir.
+gas_fee_zerenya = 12500000000000
+
+# Maximum gas per block - `evm_load_test` benchmark'ıyla ölçüldü (bkz.
+# crates/zagros-tests/src/bin/evm_load_test.rs): sıralı EVM lane'i (revm
+# thread-safe olmadığından ContractCall/CallContract HER ZAMAN sıralı çalışır)
+# tek çağrı başına ~43.116 gas'ta ~7.500 çağrı/sn işliyor. 35M'de tamamen dolu
+# bir blok ~107ms EVM işi gerektirir - 200ms hedef blok süresinin ~%54'ü,
+# geri kalan ~%46'sı state_root/flush/arşiv gibi ek yükler için pay kalır.
+# Eski hardcoded 100M tavan bu payı YOK ediyordu (306ms > 200ms hedef).
+max_gas_per_block = 35000000
+
+# Target gas per block
+target_gas_per_block = 25000000
+
+# Enable dynamic gas pricing: true ise taban gas ücreti havuz oranına göre
+# (ZAGROS/ZERENYA rezervleri) ölçeklenir; false ise sabit `gas_fee_zerenya`
+# hedefi doğrudan kullanılır. Bu SADECE fiyat bazlı ölçeklemeyi etkiler -
+# Anti-DDoS stress çarpanı (mempool yükü arttıkça ücretin üstel artışı) bu
+# ayardan bağımsızdır ve her koşulda aktif kalır.
+enable_dynamic_gas = true
+
+[mempool]
+# Maximum mempool capacity (adet) - wired: Mempool::with_config
+max_capacity = 100000
+
+# DDoS threshold (when anti-spam kicks in)
+ddos_threshold = 20000
+
+# K4: Maksimum toplam mempool bellek bütçesi (bayt, örn. 256MB) - wired.
+max_total_bytes = 268435456
+
+# Transaction expiry time in seconds (1 hour). item 9: bu alan artık GERÇEKTEN
+# uygulanıyor - 60 saniyede bir çalışan bir arka-plan süpürücü bu süreden eski
+# işlemleri mempool'dan tahliye eder (eskiden bu değer sessizce yok sayılıyordu).
+tx_expiry_seconds = 3600
+
+# Enable mempool
+enable_mempool = true
+
+[bridge]
+# Number of authority signatures required to execute a bridge mint proposal
+# (m-of-n threshold, must be >= 2 and <= number of authorities below).
+required_signatures = 2
+
+# On-chain daily bridge mint cap, in ZERENYA with 18 decimals (i.e. this many
+# zeros after the token count). This is a GLOBAL cap shared by the whole
+# network (one counter, not per-wallet) - enforced atomically by the executor
+# at mint time (Executor::with_bridge_daily_mint_limit) regardless of how many
+# multi-sig-approved proposals, from how many different users, are executed in
+# the same day. Default: 2,500 ZERENYA/day (tune upward as real PAXG-backed
+# liquidity grows - the genesis pool only holds 10,500 ZERENYA total).
+# daily_mint_limit = 2500000000000000000000
+
+# Node-internal hex-encoded secp256k1 secret key used to sign the final,
+# already-multi-sig-approved on-chain BridgeMint transaction. Must correspond
+# to authority_address below (and BRIDGE_AUTHORITY_ADDRESS, see
+# crates/zagros-types/src/lib.rs, only as a fallback when authority_address is
+# unset - see its own comment). Leave unset to disable automatic on-chain
+# execution (proposing/signing still works). SECURITY: only the ONE node that
+# actually auto-executes bridge mints should have this set - do NOT copy it to
+# P2P follower/validator nodes.
+# signer_secret_key_hex = "0x..."
+
+# PUBLIC address matching signer_secret_key_hex above (safe to share - this is
+# NOT a secret, it's the address, not the key). Determines which transactions
+# are exempt from gas fees as legitimate BridgeMint/BridgeMintAndSwap
+# executions (Executor::bridge_authority). CONSENSUS-CRITICAL: every node that
+# validates/replays the chain - including P2P followers that intentionally do
+# NOT hold signer_secret_key_hex - MUST set this to the SAME value as the
+# node that actually holds the signer key. Leaving this unset on a follower
+# while the proposer has signer_secret_key_hex configured causes the follower
+# to silently fall back to BRIDGE_AUTHORITY_ADDRESS (=FOUNDER_ADDRESS), which
+# will not match the real bridge authority - the follower then rejects
+# already-valid, already-mined bridge mint transactions as
+# InsufficientBalanceForGas and desyncs from the proposer at that block. If
+# both this and signer_secret_key_hex are set, they must resolve to the same
+# address or the node refuses to start.
+# authority_address = "0x..."
+
+# Bridge multi-sig authorities. If this is left empty, the node REFUSES TO
+# START unless allow_insecure_default_authorities (below) is explicitly true.
+# [[bridge.authorities]]
+# address = "0x..."
+# public_key_hex = "..." # 32-byte Ed25519 public key, hex
+# is_active = true
+
+# Only set this to true for local development, and only when authorities
+# above is intentionally left empty. The node will then fall back to
+# BridgeManager::default_authorities()'s fixed, publicly-known test keys,
+# which must NEVER be used with real funds. Default: false (node refuses to
+# start with empty authorities unless this is explicitly opted into).
+# allow_insecure_default_authorities = true
+
+[governance]
+# Flat fee burned (deducted from the sender, credited nowhere - no new
+# treasury) on SubmitProposal. Spam protection. ZAGROS, 18 decimals.
+# Default: 1000 ZAGROS.
+proposal_fee = 1000000000000000000000
+
+# Minimum `staked_balance` required to submit a proposal - the primary spam
+# filter. ZAGROS, 18 decimals. Default: 10000 ZAGROS.
+min_stake_to_submit = 10000000000000000000000
+
+# Global cap on how many proposals may be "active" (not yet archived) at
+# once. Default: 50.
+max_active_proposals = 50
+
+# How long a proposal stays open for voting, in seconds. When this window
+# closes, the proposal transitions to Succeeded/Rejected/Expired based on the
+# vote tally. Default: 604800 (7 days).
+voting_period_secs = 604800
+
+# How long after `created_at` a proposal (regardless of status, except
+# Executed) is archived and drops out of the active-proposal count - prevents
+# unvoted/forgotten proposals from lingering in state forever. Must be
+# greater than voting_period_secs. Default: 2592000 (30 days).
+proposal_expiry_secs = 2592000
+
+[alerts]
+# Operator alerting webhook. Empty (default) = alerting fully disabled, zero
+# network requests ever made. When set, fires a one-time (edge-triggered, not
+# repeated every poll) POST when: the genesis validator gets jailed, the
+# mempool enters Anti-DDoS stress mode, or block production stalls for more
+# than `stall_threshold_secs` while transactions are pending (an empty
+# mempool producing no blocks is normal and never alerts).
+# Body is a single JSON object with both `content` (Discord) and `text`
+# (Slack) keys - both incoming-webhook formats work out of the box. Telegram's
+# Bot API is not a passive webhook receiver in the same sense, so alerting
+# Telegram requires a small bridging/proxy service in front of this URL.
+# webhook_url = "https://discord.com/api/webhooks/..."
+
+# How many seconds of "mempool has pending transactions but no new block" is
+# considered a stall. Default: 300 (5 minutes).
+stall_threshold_secs = 300
+
+[genesis]
+# G13 (§16.2): mainnet geçiş günü `replay_guard_export` çıktısı (bkz. spec).
+# replay_guard_file = "./replay_guard.txt"

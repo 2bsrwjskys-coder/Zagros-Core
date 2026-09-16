@@ -1,0 +1,106 @@
+# Zagros Relayer - Örnek Yapılandırma
+# Bu dosyayı relayer.toml olarak kopyalayıp kendi anahtarlarınızla doldurun.
+# ASLA gerçek anahtarları bu örnek dosyaya veya sürüm kontrolüne yazmayın.
+
+[identity]
+# Ed25519 gizli anahtarı (hex, 32 bayt) - Zagros BridgeManager'da bu relayer'ı
+# temsil eden yetkili adresi bundan türetilir. config.toml'daki [[bridge.authorities]]
+# listesinde bu anahtarın açık anahtarı kayıtlı olmalı.
+zagros_signing_key_hex = "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+# secp256k1 gizli anahtarı (hex, 32 bayt) - Ethereum'a unlockTokens() göndermek
+# ve gas ödemek için. ZagrosBridgeGateway.sol'un isRelayer listesinde bu
+# anahtardan türetilen adres kayıtlı olmalı.
+ethereum_signing_key_hex = "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+[ethereum]
+# eth_subscribe için WebSocket uç noktası.
+ws_rpc_url = "wss://mainnet.infura.io/ws/v3/YOUR_PROJECT_ID"
+
+# ZagrosBridgeGateway.sol'un dağıtıldığı adres.
+gateway_contract_address = "0x0000000000000000000000000000000000000000"
+
+# Bir TokensLocked olayının işleme alınmadan önce beklenecek blok onayı sayısı.
+confirmation_depth = 12
+# Ethereum tarama araligi - Zagros taramasindan AYRI tutulur.
+# Yerel taramayi hizlandirmak, hiz sinirli saglayiciyi yakmamali.
+poll_interval_secs = 3
+
+# unlockTokens() çağrılırken kullanılacak ERC20 adresi (PAXG - Pax Gold).
+# BİLİNEN SINIRLAMA: şu an tek, sabit bir token destekleniyor
+# (bkz. crates/zagros-relayer/src/config.rs).
+unlock_token_address = "0x0000000000000000000000000000000000000000"
+
+# Hedef ERC20'nin ondalık sayısı (PAXG = 18). ZERENYA'nın 18 ondalıklı tutarı
+# buna ölçeklenir ve EIP-712 dijestine ÖLÇEKLENMİŞ hâli girer - PAXG için bu
+# ölçekleme fiilen kimlik (1:1) dönüşümüdür.
+# 🚨 Düğümün [bridge.ethereum].unlock_token_decimals değeriyle AYNI olmalı.
+unlock_token_decimals = 18
+
+# EIP-712 domain'i için Ethereum zincir kimliği (mainnet = 1).
+# [bridge].chain_id (Zagros) ile KARIŞTIRMAYIN.
+ethereum_chain_id = 1
+
+# 🌉 FAZ4 ZORUNLU: Gateway'in isRelayer kümesindeki TÜM relayer Ethereum adresleri,
+# SABİT (deterministik) sırayla. Bu relayer'ın KENDİ Ethereum adresi (identity'den
+# türetilen) bu listede BULUNMALI - aksi halde relayer BAŞLAMAZ (fail-closed).
+relayer_addresses = [
+  # "0x<bu-relayer'in-kendi-ethereum-adresi>",
+  # "0x<diger-relayer-ethereum-adresi>",
+]
+
+# item 12: normalde kalıcı Ethereum tarama imlecinden (bir önceki kapanışta
+# kaldığı yerden) devam edilir. `true` yapılırsa kalıcı imleç YOK SAYILIR ve
+# `start_block`'tan (gateway'in deploy bloğu) TAM YENİDEN tarama yapılır -
+# yalnızca bilinçli bir tam re-sync gerektiğinde, GEÇİCİ olarak açın; bir
+# restart sonrası tekrar `false`'a döndürmeyi UNUTMAYIN (aksi halde her
+# başlangıçta tam yeniden tarama tekrarlanır). Varsayılan: false.
+# reset_inbound_cursor = false
+
+[zagros]
+# Zagros düğümünün JSON-RPC HTTP uç noktası.
+rpc_url = "http://127.0.0.1:8545"
+
+# zagros_getRecentBridgeBurns / zagros_getPendingBridgeProposals taramaları
+# arasındaki bekleme süresi (saniye).
+poll_interval_secs = 2
+
+[bridge]
+# zagros-types::CHAIN_ID ile eşleşmeli.
+chain_id = 21072026
+source_chain_name = "Ethereum"
+
+# 🛡️ [8] ZORUNLU: Bu relayer'ın GÜVENDİĞİ köprü yetkililerinin Ed25519 PUBLIC
+# key'leri (hex, 32 bayt). Outbound unlock akışında toplanan imzalar SADECE bu
+# kümeye karşı doğrulanır (eskiden sabit dev seed'lere karşıydı). Bu liste, node
+# tarafındaki config.toml [[bridge.authorities]].public_key_hex kümesiyle BİREBİR
+# AYNI olmalıdır. Boş bırakılırsa relayer BAŞLAMAZ (fail-closed - dev seed'e
+# sessizce düşmez). Aşağıdaki değerler yalnızca yerel geliştirme içindir; ÜRETİMDE
+# gerçek yetkili public key'leriyle DEĞİŞTİRİN.
+authorities = [
+  # "0x<yetkili-1-ed25519-public-key-hex-32-bayt>",
+  # "0x<yetkili-2-ed25519-public-key-hex-32-bayt>",
+  # "0x<yetkili-3-ed25519-public-key-hex-32-bayt>",
+]
+# M-of-N eşiği (node'un BridgeManager eşiğiyle aynı). >= 2 olmalı.
+required_signatures = 2
+
+# item 15: bir cursor gap (sunucu, bu relayer'ın ihtiyaç duyduğu burn
+# kayıtlarını çoktan budamış) tespit edildiğinde OTOMATİK kurtarma.
+# Varsayılan `false` (fail-closed) - imleç ilerletilmez, yalnızca güçlü bir
+# ERROR loglanır ve operatör `cursor_recover` CLI aracıyla (bkz.
+# `crates/zagros-relayer/src/bin/cursor_recover.rs`) manuel müdahale eder.
+# `true` yapılırsa imleç sunucunun bildirdiği en eski mevcut index'e
+# ilerletilir - budanan aralık bu relayer için KALICI OLARAK atlanır; YALNIZCA
+# en az bir başka (yedek) relayer'ın bu boşluğu kapatabileceği çoklu-relayer
+# dağıtımlarında güvenli.
+# auto_recover_cursor_gap = false
+
+[idempotency]
+# item 11: idempotency kayıtlarının (`idem:eth:*`/`idem:zagros_burn:*`/
+# `idem:unlock_submitted:*`) ne kadar süre saklanacağı (gün). Bu süreden eski
+# kayıtlar periyodik bir arka plan süpürmesiyle silinir - yalnızca bu
+# özellikten SONRA yazılmış (zaman damgalı) kayıtlar budanır; eski/tarihsiz
+# kayıtlar hiçbir zaman otomatik silinmez (replay-korumasını zayıflatmaktansa
+# fazladan tutmak tercih edilir). Varsayılan: 30.
+# retention_days = 30

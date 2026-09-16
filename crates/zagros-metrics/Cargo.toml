@@ -1,0 +1,12 @@
+[package]
+name = "zagros-metrics"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+
+[dependencies]
+zagros-primitives = { path = "../zagros-primitives" }
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

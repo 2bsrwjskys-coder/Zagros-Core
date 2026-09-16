@@ -1,0 +1,53 @@
+[package]
+name = "zagros-tests"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+
+[dependencies]
+zagros-crypto = { path = "../zagros-crypto" }
+zagros-types = { path = "../zagros-types" }
+zagros-storage = { path = "../zagros-storage" }
+zagros-state = { path = "../zagros-state" }
+zagros-executor = { path = "../zagros-executor" }
+zagros-runtime = { path = "../zagros-runtime" }
+zagros-scheduler = { path = "../zagros-scheduler" }
+zagros-metrics = { path = "../zagros-metrics" }
+secp256k1.workspace = true
+hex.workspace = true
+sha3.workspace = true
+rand.workspace = true
+bincode.workspace = true
+tempfile = "3"
+ed25519-dalek = { version = "2.0.0", features = ["std", "rand_core"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+
+[[bin]]
+name = "bench_block"
+path = "src/bin/bench_block.rs"
+
+[[bin]]
+name = "bridge_keygen"
+path = "src/bin/bridge_keygen.rs"
+
+[[bin]]
+name = "growth_simulation"
+path = "src/bin/growth_simulation.rs"
+
+[[bin]]
+name = "evm_load_test"
+path = "src/bin/evm_load_test.rs"
+
+[[bin]]
+name = "swap_disk_growth"
+path = "src/bin/swap_disk_growth.rs"
+
+[[bin]]
+name = "equivocation_drill"
+path = "src/bin/equivocation_drill.rs"
+
+[[bin]]
+name = "relayer_keygen"
+path = "src/bin/relayer_keygen.rs"

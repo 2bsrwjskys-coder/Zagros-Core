@@ -1,0 +1,4 @@
+# Resmî derleme makinesiyle birebir aynı toolchain; yeniden üretilebilir derleme için.
+[toolchain]
+channel = "1.98.0"
+components = ["rustfmt", "clippy"]

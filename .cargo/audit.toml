@@ -1,0 +1,12 @@
+# F7 (2026-08-02): zagros-relayer -> ethers-providers 2.0.14 (crates.io'daki
+# en güncel sürüm) tarafından sabitlenmiş eski jsonwebtoken 8.x / rustls 0.21
+# hattından gelen, `cargo update` ile düzeltilemeyen 4 açık. Gerekçe ve kapsam
+# analizi deny.toml'daki [advisories].ignore listesindeki aynı ID'lerin
+# yanındaki notta - iki dosya birbiriyle senkron tutulmalı.
+[advisories]
+ignore = [
+    "RUSTSEC-2025-0009",
+    "RUSTSEC-2026-0104",
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+]

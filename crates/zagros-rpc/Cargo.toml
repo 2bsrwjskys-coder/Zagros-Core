@@ -1,0 +1,38 @@
+[package]
+name = "zagros-rpc"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+
+[dependencies]
+zagros-primitives = { path = "../zagros-primitives" }
+zagros-types = { path = "../zagros-types" }
+zagros-state = { path = "../zagros-state" }
+zagros-mempool = { path = "../zagros-mempool" }
+zagros-executor = { path = "../zagros-executor" }
+tokio.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+warp = "0.3"
+# 🚀 YENİ EKLENEN EVM ŞİFRE ÇÖZÜCÜ KÜTÜPHANELERİ
+ethers-core = "2.0.14"
+sha3 = "0.10"
+hex = "0.4"
+alloy-primitives = "0.8.26"
+dashmap.workspace = true
+futures-util = "0.3"
+lazy_static = "1.5"
+sonic-rs = "0.5.8"
+bytes = "1.12.1"
+bincode.workspace = true
+zagros-metrics = { path = "../zagros-metrics" }
+
+[dev-dependencies]
+zagros-crypto = { path = "../zagros-crypto" }
+zagros-storage = { path = "../zagros-storage" }
+ed25519-dalek = { version = "2.0.0", features = ["std"] }
+portable-atomic = "1.0"
+secp256k1.workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "zagros-crypto"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Zagros konsensüs kriptografisi: Ed25519 konsensüs anahtarı, domain-separated imza/doğrulama, QC/evidence doğrulama, anahtar dosyası"
+
+[dependencies]
+zagros-primitives = { path = "../zagros-primitives" }
+zagros-types = { path = "../zagros-types" }
+# Köprü/relayer/rpc ile aynı sürüm (workspace'te zaten kullanılıyor).
+ed25519-dalek = { version = "2.0.0", features = ["std", "rand_core"] }
+rand = { version = "0.8", features = ["std", "std_rng"] }
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true

@@ -1,0 +1,53 @@
+[package]
+name = "zagros-relayer"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+
+[dependencies]
+zagros-primitives = { path = "../zagros-primitives" }
+zagros-types = { path = "../zagros-types" }
+zagros-executor = { path = "../zagros-executor" }
+zagros-storage = { path = "../zagros-storage" }
+zagros-metrics = { path = "../zagros-metrics" }
+tokio.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+sha3.workspace = true
+bincode.workspace = true
+secp256k1.workspace = true
+ed25519-dalek = { version = "2.0.0", features = ["std"] }
+ethers-core = "2.0.14"
+ethers-providers = { version = "2.0.14", features = ["ws"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+toml = "1.1.2"
+# API anahtarlarını relayer.toml'a düz metin yazmamak için .env desteği.
+dotenvy = "0.15"
+# item 13: retry kuyruğu jitter'ı için. Workspace'teki "0.8" pin'i, `secp256k1`'in
+# zaten transitive olarak çözdüğü sürümle eşleşiyor - bağımlılık grafiğini
+# ikinci bir major sürümle büyütmemek için.
+rand.workspace = true
+# item 8/15: manuel kurtarma CLI aracı (`cursor_recover`) için.
+clap.workspace = true
+# item 14: kimlik anahtarlarının çözülmüş ham baytlarını bellekte gereksiz
+# yere bırakmamak için (Debug/Serialize sızıntısına karşı da sertleştirme).
+zeroize.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+zagros-rpc = { path = "../zagros-rpc" }
+zagros-mempool = { path = "../zagros-mempool" }
+zagros-state = { path = "../zagros-state" }
+zagros-primitives = { path = "../zagros-primitives" }
+portable-atomic = "1.0"
+warp = "0.3"
+bytes = "1.12.1"
+dashmap.workspace = true
+
+[[bin]]
+name = "zagros-relayer"
+path = "src/main.rs"

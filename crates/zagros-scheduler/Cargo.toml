@@ -1,0 +1,22 @@
+[package]
+name = "zagros-scheduler"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+
+[dependencies]
+zagros-primitives = { path = "../zagros-primitives" }
+zagros-types = { path = "../zagros-types" }
+zagros-executor = { path = "../zagros-executor" }
+rayon.workspace = true
+dashmap.workspace = true
+tracing.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+zagros-state = { path = "../zagros-state" }
+zagros-storage = { path = "../zagros-storage" }
+secp256k1.workspace = true
+bincode.workspace = true

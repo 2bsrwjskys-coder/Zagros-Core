@@ -1,0 +1,26 @@
+[package]
+name = "zagros-types"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+
+[dependencies]
+zagros-primitives = { path = "../zagros-primitives" }
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+sha3.workspace = true
+secp256k1.workspace = true
+alloy-primitives = { version = "0.8", features = ["serde"] }
+# 🚨 GÜVENLİK (2026-08-27): EVM kökenli işlemlerin ALANLARININ imzaya bağlı
+# olduğunu doğrulamak için ham RLP'nin kanonik olarak yeniden çözülmesi
+# gerekiyor (bkz. `Transaction::verify_evm_field_binding`). Bu kontrol
+# `Transaction`'ın kendi sorumluluğu olmalı, çünkü işlemler RPC dışındaki
+# yollardan da (P2P gossip, blok gövdesi) sisteme giriyor.
+ethers-core = "2.0.14"
+tracing.workspace = true
+bincode.workspace = true
+toml = "1.1.2"
+portable-atomic = "1.0"

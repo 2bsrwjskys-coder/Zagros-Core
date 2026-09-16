@@ -1,0 +1,58 @@
+[package]
+name = "zagros-network"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+
+[dependencies]
+zagros-primitives = { path = "../zagros-primitives" }
+zagros-types = { path = "../zagros-types" }
+zagros-state = { path = "../zagros-state" }
+zagros-metrics = { path = "../zagros-metrics" }
+zagros-mempool = { path = "../zagros-mempool" }
+zagros-runtime = { path = "../zagros-runtime" }
+# 🛡️ P2P follower senkronizasyon hatası kök-neden düzeltmesi (2026-08-15):
+# BridgeMint/BridgeMintAndSwap işlemlerinin doğrulanması, blok verisinin
+# KENDİSİNDE olmayan, RPC üzerinden ayrıca oluşturulmuş bir `BridgeProposal`
+# kaydına bağlı - bu kayıt blokla birlikte taşınmazsa bir follower onu asla
+# göremez. `zagros-network` artık bu kaydı (opak biçimde DEĞİL, gerçek tipiyle)
+# toplayıp/işleyebilmek için `zagros-executor::bridge`'e bağımlı (bkz.
+# messages.rs'teki `collect_bridge_proposals`/`ingest_bridge_proposals`).
+zagros-executor = { path = "../zagros-executor" }
+zagros-consensus = { path = "../zagros-consensus" }
+zagros-crypto = { path = "../zagros-crypto" }
+tokio.workspace = true
+serde.workspace = true
+bincode.workspace = true
+hex.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+# `request_response::Codec` trait'i `#[async_trait]` ile tanımlı (libp2p'nin
+# kendisinin de bağımlılığı) - implementasyon tarafının da AYNI makroyu
+# kullanması gerekiyor (bkz. codec.rs).
+async-trait = "0.1"
+
+# Faz 0/1 notu: sadece bu crate'e özgü bir bağımlılık - `zagros-executor`'ın
+# `revm`'i gibi, tek tüketicisi olduğu için workspace.dependencies'e değil
+# doğrudan buraya eklendi (bkz. Cargo.toml'daki mevcut kural).
+libp2p = { version = "0.56", features = [
+    "tokio",
+    "tcp",
+    "noise",
+    "yamux",
+    "gossipsub",
+    "mdns",
+    "identify",
+    "request-response",
+    "macros",
+] }
+
+[dev-dependencies]
+tempfile = "3"
+zagros-storage = { path = "../zagros-storage" }
+zagros-scheduler = { path = "../zagros-scheduler" }
+secp256k1.workspace = true
+portable-atomic = "1.0"

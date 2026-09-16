@@ -1,0 +1,23 @@
+[package]
+name = "zagros-consensus"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+
+[dependencies]
+zagros-primitives = { path = "../zagros-primitives" }
+zagros-types = { path = "../zagros-types" }
+zagros-runtime = { path = "../zagros-runtime" }
+zagros-executor = { path = "../zagros-executor" }
+zagros-crypto = { path = "../zagros-crypto" }
+serde.workspace = true
+tracing.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+zagros-state = { path = "../zagros-state" }
+secp256k1.workspace = true
+zagros-scheduler = { path = "../zagros-scheduler" }
+zagros-storage = { path = "../zagros-storage" }

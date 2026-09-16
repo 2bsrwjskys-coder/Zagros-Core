@@ -1,0 +1,65 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+# 🛡️ DÜZELTME: `Cargo.lock` bilerek İZLENİYOR (bir kütüphane değil, `zagros-cli`
+# gibi çalıştırılabilir ikili dosyalar üreten bir workspace) - amaç, `revm`
+# gibi konsensüs-kritik bağımlılıkların HER ortamda (temiz clone, CI, yeni
+# makine) birebir aynı sürüme kilitlenmesi. `Cargo.toml`'daki `revm = "14.0.3"`
+# gibi caret talepleri (`^14.0.3`) `Cargo.lock` olmadan sessizce daha yeni bir
+# 14.x'e çözülebilir - bkz. `zagros-executor/src/evm.rs`'teki `ZAGROS_EVM_SPEC_ID`
+# yorumu.
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Database
+/data/
+*.db
+*.sqlite
+# Node'un gerçek RocksDB veri dizini (bkz. CLAUDE.md) - manuel smoke-testler
+# sırasında oluşan çalışma zamanı verisi, kaynak kod DEĞİL.
+/zagros-data/
+# Node çalışırken sürekli güncellenen fiyat geçmişi önbelleği - çalışma
+# zamanı verisi, her çalıştırmada gereksiz commit gürültüsü yaratıyordu.
+price_history.json
+
+# Logs
+*.log
+logs/
+
+# Configuration (keep template)
+config.toml
+!config.example.toml
+
+# Build artifacts
+*.o
+*.so
+*.dylib
+*.dll
+
+# Test artifacts
+/test-data/
+/tmp/
+
+# Documentation build
+/target/doc/
+
+# Benchmark results
+/target/criterion/
+
+# Environment
+.env
+.env.local
+
+# Köprü relayer yapılandırması - GİZLİ ANAHTAR içerir, asla commit edilmez.
+relayer.toml
+crates/zagros-relayer/relayer.toml
+crates/zagros-relayer/relayer2.toml
+crates/zagros-relayer/relayer3.toml
+zagros-relayer-data*

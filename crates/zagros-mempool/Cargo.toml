@@ -1,0 +1,20 @@
+[package]
+name = "zagros-mempool"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+
+[dependencies]
+zagros-primitives = { path = "../zagros-primitives" }
+zagros-types = { path = "../zagros-types" }
+zagros-state = { path = "../zagros-state" }
+dashmap.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+zagros-storage = { path = "../zagros-storage" }
+secp256k1.workspace = true
+portable-atomic = "1.0"
