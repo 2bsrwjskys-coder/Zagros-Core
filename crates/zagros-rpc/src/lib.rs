@@ -2543,11 +2543,14 @@ impl RpcServer {
                         .ok()
                         .filter(|bytes| bytes.len() == 32)
                         .and_then(|bytes| {
-                            Self::lookup_account(&state, &block_hash_key(&{
-                                let mut hash = [0u8; 32];
-                                hash.copy_from_slice(&bytes);
-                                hash
-                            }))
+                            Self::lookup_account(
+                                &state,
+                                &block_hash_key(&{
+                                    let mut hash = [0u8; 32];
+                                    hash.copy_from_slice(&bytes);
+                                    hash
+                                }),
+                            )
                             .map(|acc| acc.balance as u64)
                         });
                     match number {
@@ -2565,7 +2568,8 @@ impl RpcServer {
                         }
                     }
                 } else {
-                    let from = Self::resolve_block_number_param(&state, filter_obj.get("fromBlock"));
+                    let from =
+                        Self::resolve_block_number_param(&state, filter_obj.get("fromBlock"));
                     let to = Self::resolve_block_number_param(&state, filter_obj.get("toBlock"));
                     match (from, to) {
                         (Some(f), Some(t)) => (f, t.min(current_height)),
@@ -7879,10 +7883,7 @@ mod tests {
     /// `eth_getLogs` testleri için zemin: `height` yüksekliği, her biri tek EVM
     /// işlemi taşıyan bloklar ve o işlemlerin makbuzlarındaki loglar.
     /// `logs_per_block[i]` = (adres, topic0) çiftleri.
-    fn seed_logs_chain(
-        state: &Arc<dyn State>,
-        logs_per_block: &[(u64, Vec<(&str, u8)>)],
-    ) {
+    fn seed_logs_chain(state: &Arc<dyn State>, logs_per_block: &[(u64, Vec<(&str, u8)>)]) {
         let height = logs_per_block.iter().map(|(n, _)| *n).max().unwrap_or(0);
         state
             .set_account(
@@ -8025,11 +8026,14 @@ mod tests {
         assert_eq!(by_address.as_array().unwrap().len(), 2);
 
         // Topic filtresi: topic0 == 0x..02 olan iki log (blok 2 ve 3).
-        let topic2 = format!("0x{}", hex::encode({
-            let mut t = [0u8; 32];
-            t[31] = 2;
-            t
-        }));
+        let topic2 = format!(
+            "0x{}",
+            hex::encode({
+                let mut t = [0u8; 32];
+                t[31] = 2;
+                t
+            })
+        );
         let by_topic = get_logs(
             state.clone(),
             serde_json::json!({
@@ -8087,7 +8091,10 @@ mod tests {
             serde_json::json!({ "fromBlock": "0x0", "toBlock": "latest" }),
         );
         assert!(response.result.is_none(), "tavani asan sorgu calismamali");
-        assert_eq!(response.error.expect("hata bekleniyordu")["code"], Value::from(-32005));
+        assert_eq!(
+            response.error.expect("hata bekleniyordu")["code"],
+            Value::from(-32005)
+        );
     }
 
     #[test]
@@ -8100,7 +8107,10 @@ mod tests {
             state,
             serde_json::json!({ "fromBlock": "0x1", "toBlock": "0x5" }),
         );
-        assert!(response.result.is_none(), "budanmis aralik bos dizi ile gizlenmemeli");
+        assert!(
+            response.result.is_none(),
+            "budanmis aralik bos dizi ile gizlenmemeli"
+        );
         let error = response.error.expect("hata bekleniyordu");
         assert_eq!(error["code"], Value::from(-32000));
         assert!(
@@ -8122,7 +8132,10 @@ mod tests {
             EvmSimulationLimits::default(),
         );
         assert!(response.result.is_none());
-        assert_eq!(response.error.expect("hata bekleniyordu")["code"], Value::from(-32602));
+        assert_eq!(
+            response.error.expect("hata bekleniyordu")["code"],
+            Value::from(-32602)
+        );
     }
 
     #[test]
