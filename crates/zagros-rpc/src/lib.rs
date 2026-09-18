@@ -36,6 +36,12 @@ const MAX_TRACKED_IPS: usize = 100_000;
 // (varsayılan 512 thread) koruyor: bu tavanı aşan istekler hemen 503 ile
 // reddedilir, blocking-pool kuyruğu şişmez.
 const MAX_IN_FLIGHT_HTTP_REQUESTS: usize = 2048;
+// 🔎 eth_getLogs kalkanları. Olaylar makbuzların içinde saklanır (ArchivedReceipt.logs),
+// ayrı bir log indeksi YOKTUR: sorgu, aralıktaki her bloğun her makbuzunu okur. Bu yüzden
+// aralık ve sonuç sayısı SINIRLI olmalı, yoksa tek bir istek düğümü meşgul edebilir.
+// Sınırlar Ethereum sağlayıcılarının yaygın değerleriyle aynı mertebede.
+const MAX_GET_LOGS_BLOCK_RANGE: u64 = 5_000;
+const MAX_GET_LOGS_RESULTS: usize = 10_000;
 // tx_cache: bu düğümden gönderilmiş ama makbuzu henüz diske yazılmamış
 // işlemleri geçici görünür kılar (bkz. eth_getTransactionByHash). TTL blok
 // üretim süresini fazlasıyla aşar ama harita sınırsız büyümez.
@@ -1815,6 +1821,58 @@ impl RpcServer {
 
     /// `block_<N>`i okur, hash'ini ham baytlardan hesaplar; `number == 0` genesis'in
     /// özel `block_0` yolunu kullanır.
+    /// `eth_getLogs` adres filtresi: tek dize, dizi ya da yok (hepsi).
+    /// Karşılaştırma küçük harfe indirilerek yapılır (checksum'lı adres de eşleşsin).
+    fn get_logs_address_filter(raw: Option<&Value>) -> Option<Vec<String>> {
+        match raw {
+            None | Some(Value::Null) => None,
+            Some(Value::String(one)) => Some(vec![one.to_lowercase()]),
+            Some(Value::Array(list)) => {
+                let items: Vec<String> = list
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_lowercase()))
+                    .collect();
+                // Boş dizi = "hiçbir adres": filtre olarak korunur, her şeyi elemeli.
+                Some(items)
+            }
+            Some(_) => Some(Vec::new()),
+        }
+    }
+
+    /// Topic filtresi KONUMSALDIR: `topics[i]` log'un i. topic'iyle karşılaştırılır.
+    /// `null` = o konumda her şey kabul; dizi = OR listesi; dize = tam eşleşme.
+    /// Filtre log'un topic sayısından uzunsa o log elenir (Ethereum semantiği).
+    fn get_logs_topics_match(filter: Option<&Value>, log_topics: &[[u8; 32]]) -> bool {
+        let Some(Value::Array(positions)) = filter else {
+            return true; // yok ya da dizi değil → filtre uygulanmaz
+        };
+        if positions.len() > log_topics.len() {
+            return false;
+        }
+        for (index, wanted) in positions.iter().enumerate() {
+            let actual = format!("0x{}", hex::encode(log_topics[index]));
+            let ok = match wanted {
+                Value::Null => true,
+                Value::String(one) => one.to_lowercase() == actual,
+                Value::Array(any_of) => {
+                    if any_of.is_empty() {
+                        true // boş dizi = wildcard (Ethereum sağlayıcılarıyla aynı)
+                    } else {
+                        any_of
+                            .iter()
+                            .filter_map(|v| v.as_str())
+                            .any(|v| v.to_lowercase() == actual)
+                    }
+                }
+                _ => false,
+            };
+            if !ok {
+                return false;
+            }
+        }
+        true
+    }
+
     fn load_archived_block(
         state: &Arc<dyn State>,
         number: u64,
@@ -2448,6 +2506,182 @@ impl RpcServer {
                 tx_cache.insert(tx_hash.clone(), (eth_sender, now_secs));
                 info!("✅ İşlem başarıyla Mempool'a eklendi!");
                 Value::String(tx_hash)
+            }
+
+            // 🔎 `eth_getLogs`: EVM olaylarını blok aralığı + adres/topic filtresiyle döndürür.
+            // Kaynak: her bloğun `tx_hashes` listesi → `Receipt_<id>` → `ArchivedReceipt.logs`.
+            // Ayrı log indeksi yok; bu yüzden aralık ve sonuç TAVANLI (bkz. MAX_GET_LOGS_*).
+            // Budanmış blok istenirse sessizce boş dönmek YERİNE açık hata verilir (D14 ilkesi:
+            // eksik arşiv "olay yok" gibi gösterilmez).
+            "eth_getLogs" => {
+                let filter = safe_params.first().cloned().unwrap_or(Value::Null);
+                let filter_obj = match filter.as_object() {
+                    Some(map) => map.clone(),
+                    None => {
+                        return RpcResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id: req.id,
+                            result: None,
+                            error: Some(serde_json::json!({
+                                "code": -32602,
+                                "message": "eth_getLogs requires a filter object"
+                            })),
+                        }
+                    }
+                };
+
+                let current_height = Self::lookup_account(&state, "__GLOBAL_BLOCK_HEIGHT__")
+                    .map(|account| account.balance as u64)
+                    .unwrap_or(0);
+
+                // `blockHash` verilirse fromBlock/toBlock yok sayılır (Ethereum semantiği).
+                let (from_block, to_block) = if let Some(block_hash) =
+                    filter_obj.get("blockHash").and_then(|v| v.as_str())
+                {
+                    let clean = block_hash.strip_prefix("0x").unwrap_or(block_hash);
+                    let number = hex::decode(clean)
+                        .ok()
+                        .filter(|bytes| bytes.len() == 32)
+                        .and_then(|bytes| {
+                            Self::lookup_account(&state, &block_hash_key(&{
+                                let mut hash = [0u8; 32];
+                                hash.copy_from_slice(&bytes);
+                                hash
+                            }))
+                            .map(|acc| acc.balance as u64)
+                        });
+                    match number {
+                        Some(n) => (n, n),
+                        None => {
+                            return RpcResponse {
+                                jsonrpc: "2.0".to_string(),
+                                id: req.id,
+                                result: None,
+                                error: Some(serde_json::json!({
+                                    "code": -32000,
+                                    "message": "unknown block hash (or its block is pruned on this node)"
+                                })),
+                            }
+                        }
+                    }
+                } else {
+                    let from = Self::resolve_block_number_param(&state, filter_obj.get("fromBlock"));
+                    let to = Self::resolve_block_number_param(&state, filter_obj.get("toBlock"));
+                    match (from, to) {
+                        (Some(f), Some(t)) => (f, t.min(current_height)),
+                        _ => {
+                            return RpcResponse {
+                                jsonrpc: "2.0".to_string(),
+                                id: req.id,
+                                result: None,
+                                error: Some(serde_json::json!({
+                                    "code": -32602,
+                                    "message": "invalid fromBlock/toBlock"
+                                })),
+                            }
+                        }
+                    }
+                };
+
+                if from_block > to_block {
+                    return RpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: req.id,
+                        result: None,
+                        error: Some(serde_json::json!({
+                            "code": -32602,
+                            "message": "fromBlock is greater than toBlock"
+                        })),
+                    };
+                }
+
+                let span = to_block.saturating_sub(from_block).saturating_add(1);
+                if span > MAX_GET_LOGS_BLOCK_RANGE {
+                    return RpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: req.id,
+                        result: None,
+                        error: Some(serde_json::json!({
+                            "code": -32005,
+                            "message": format!(
+                                "block range too large: {span} blocks requested, max {MAX_GET_LOGS_BLOCK_RANGE}; split the query"
+                            )
+                        })),
+                    };
+                }
+
+                let address_filter = Self::get_logs_address_filter(filter_obj.get("address"));
+                let topics_filter = filter_obj.get("topics");
+
+                let mut logs_json: Vec<Value> = Vec::new();
+                for number in from_block..=to_block {
+                    let Some((header, block_hash)) = Self::load_archived_block(&state, number)
+                    else {
+                        return RpcResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id: req.id,
+                            result: None,
+                            error: Some(serde_json::json!({
+                                "code": -32000,
+                                "message": format!(
+                                    "block {number} is pruned on this node; query an archive node (rpc.zagrosnetwork.com)"
+                                )
+                            })),
+                        };
+                    };
+                    let block_hash_hex = format!("0x{}", hex::encode(block_hash));
+
+                    for (tx_index, tx_id) in header.tx_hashes.iter().enumerate() {
+                        let Some(receipt) = Self::lookup_account(&state, &receipt_key(tx_id))
+                            .and_then(|acc| {
+                                bincode::deserialize::<ArchivedReceipt>(&acc.contract_code).ok()
+                            })
+                        else {
+                            continue; // makbuzu budanmış/native işlem: EVM log'u yok
+                        };
+                        if receipt.logs.is_empty() {
+                            continue;
+                        }
+                        let tx_hash_hex = format!("0x{}", hex::encode(tx_id));
+
+                        for (log_index, log) in receipt.logs.iter().enumerate() {
+                            if let Some(wanted) = &address_filter {
+                                if !wanted.contains(&log.address.to_lowercase()) {
+                                    continue;
+                                }
+                            }
+                            if !Self::get_logs_topics_match(topics_filter, &log.topics) {
+                                continue;
+                            }
+                            if logs_json.len() >= MAX_GET_LOGS_RESULTS {
+                                return RpcResponse {
+                                    jsonrpc: "2.0".to_string(),
+                                    id: req.id,
+                                    result: None,
+                                    error: Some(serde_json::json!({
+                                        "code": -32005,
+                                        "message": format!(
+                                            "query returned more than {MAX_GET_LOGS_RESULTS} results; narrow the block range or filters"
+                                        )
+                                    })),
+                                };
+                            }
+                            logs_json.push(serde_json::json!({
+                                "address": log.address,
+                                "topics": log.topics.iter().map(|t| format!("0x{}", hex::encode(t))).collect::<Vec<_>>(),
+                                "data": format!("0x{}", hex::encode(&log.data)),
+                                "blockHash": block_hash_hex,
+                                "blockNumber": format!("0x{number:x}"),
+                                "transactionHash": tx_hash_hex,
+                                "transactionIndex": format!("0x{tx_index:x}"),
+                                "logIndex": format!("0x{log_index:x}"),
+                                "removed": false
+                            }));
+                        }
+                    }
+                }
+
+                Value::Array(logs_json)
             }
 
             "eth_getTransactionByHash" => {
@@ -7640,6 +7874,255 @@ mod tests {
         // Keccak256("") deterministik ve 32 bayt; tam değer ezberlenmez.
         assert_eq!(hash_str.len(), 66, "0x + 64 hex karakter (32 bayt) olmali");
         assert!(hash_str.starts_with("0x"));
+    }
+
+    /// `eth_getLogs` testleri için zemin: `height` yüksekliği, her biri tek EVM
+    /// işlemi taşıyan bloklar ve o işlemlerin makbuzlarındaki loglar.
+    /// `logs_per_block[i]` = (adres, topic0) çiftleri.
+    fn seed_logs_chain(
+        state: &Arc<dyn State>,
+        logs_per_block: &[(u64, Vec<(&str, u8)>)],
+    ) {
+        let height = logs_per_block.iter().map(|(n, _)| *n).max().unwrap_or(0);
+        state
+            .set_account(
+                &"__GLOBAL_BLOCK_HEIGHT__".to_string(),
+                AccountState {
+                    balance: height as u128,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        for (number, logs) in logs_per_block {
+            let mut tx_id = [0u8; 32];
+            tx_id[0] = *number as u8;
+            tx_id[1] = 0xAB;
+
+            let archived_logs: Vec<zagros_types::ArchivedLog> = logs
+                .iter()
+                .map(|(address, topic0)| {
+                    let mut topic = [0u8; 32];
+                    topic[31] = *topic0;
+                    zagros_types::ArchivedLog {
+                        address: address.to_string(),
+                        topics: vec![topic],
+                        data: vec![0x01, 0x02],
+                    }
+                })
+                .collect();
+
+            let receipt = ArchivedReceipt {
+                status: true,
+                gas_used: 21_000,
+                contract_address: None,
+                logs: archived_logs,
+                block_number: *number,
+            };
+            state
+                .set_account(
+                    &receipt_key(&tx_id),
+                    AccountState {
+                        contract_code: bincode::serialize(&receipt).unwrap(),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+
+            let header = ArchivedBlockHeader {
+                number: *number,
+                parent_hash: [0u8; 32],
+                state_root: [0u8; 32],
+                timestamp: 1_700_000_000 + *number as u128,
+                tx_hashes: vec![tx_id],
+            };
+            state
+                .set_account(
+                    &block_key(*number),
+                    AccountState {
+                        contract_code: bincode::serialize(&header).unwrap(),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+        }
+    }
+
+    fn get_logs(state: Arc<dyn State>, filter: Value) -> RpcResponse {
+        let mempool = test_mempool(state.clone());
+        RpcServer::handle_request(
+            rpc_request("eth_getLogs", vec![filter]),
+            state,
+            mempool,
+            Arc::new(DashMap::new()),
+            default_bridge_manager_arc(),
+            EvmSimulationLimits::default(),
+        )
+    }
+
+    #[test]
+    fn eth_get_logs_returns_logs_in_range_with_standard_fields() {
+        let state = test_state();
+        seed_logs_chain(
+            &state,
+            &[
+                (1, vec![("0xaaaa000000000000000000000000000000000001", 1)]),
+                (2, vec![("0xbbbb000000000000000000000000000000000002", 2)]),
+            ],
+        );
+
+        let response = get_logs(
+            state,
+            serde_json::json!({ "fromBlock": "0x1", "toBlock": "0x2" }),
+        );
+        let logs = response.result.expect("sonuc bekleniyordu");
+        let logs = logs.as_array().expect("dizi bekleniyordu");
+        assert_eq!(logs.len(), 2, "iki bloktan birer log donmeli");
+
+        // Standart alanlar eksiksiz: kütüphaneler (ethers/viem) bunları bekler.
+        for log in logs {
+            for field in [
+                "address",
+                "topics",
+                "data",
+                "blockHash",
+                "blockNumber",
+                "transactionHash",
+                "transactionIndex",
+                "logIndex",
+                "removed",
+            ] {
+                assert!(log.get(field).is_some(), "{field} alani eksik: {log}");
+            }
+        }
+        assert_eq!(logs[0]["blockNumber"], Value::String("0x1".to_string()));
+        assert_eq!(logs[1]["blockNumber"], Value::String("0x2".to_string()));
+    }
+
+    #[test]
+    fn eth_get_logs_filters_by_address_and_topic() {
+        let state = test_state();
+        seed_logs_chain(
+            &state,
+            &[
+                (1, vec![("0xaaaa000000000000000000000000000000000001", 1)]),
+                (2, vec![("0xbbbb000000000000000000000000000000000002", 2)]),
+                (3, vec![("0xaaaa000000000000000000000000000000000001", 2)]),
+            ],
+        );
+
+        // Adres filtresi (checksum'lı yazım da eşleşmeli: karşılaştırma küçük harfte).
+        let by_address = get_logs(
+            state.clone(),
+            serde_json::json!({
+                "fromBlock": "0x1",
+                "toBlock": "0x3",
+                "address": "0xAAAA000000000000000000000000000000000001"
+            }),
+        )
+        .result
+        .expect("sonuc bekleniyordu");
+        assert_eq!(by_address.as_array().unwrap().len(), 2);
+
+        // Topic filtresi: topic0 == 0x..02 olan iki log (blok 2 ve 3).
+        let topic2 = format!("0x{}", hex::encode({
+            let mut t = [0u8; 32];
+            t[31] = 2;
+            t
+        }));
+        let by_topic = get_logs(
+            state.clone(),
+            serde_json::json!({
+                "fromBlock": "0x1",
+                "toBlock": "0x3",
+                "topics": [topic2.clone()]
+            }),
+        )
+        .result
+        .expect("sonuc bekleniyordu");
+        assert_eq!(by_topic.as_array().unwrap().len(), 2);
+
+        // Adres + topic birlikte: yalnız blok 3.
+        let both = get_logs(
+            state.clone(),
+            serde_json::json!({
+                "fromBlock": "0x1",
+                "toBlock": "0x3",
+                "address": ["0xaaaa000000000000000000000000000000000001"],
+                "topics": [topic2]
+            }),
+        )
+        .result
+        .expect("sonuc bekleniyordu");
+        let both = both.as_array().unwrap();
+        assert_eq!(both.len(), 1);
+        assert_eq!(both[0]["blockNumber"], Value::String("0x3".to_string()));
+
+        // `null` konumu joker: filtre yokmuş gibi hepsi döner.
+        let wildcard = get_logs(
+            state,
+            serde_json::json!({ "fromBlock": "0x1", "toBlock": "0x3", "topics": [null] }),
+        )
+        .result
+        .expect("sonuc bekleniyordu");
+        assert_eq!(wildcard.as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn eth_get_logs_rejects_a_block_range_above_the_cap() {
+        let state = test_state();
+        seed_logs_chain(&state, &[(1, vec![("0xaaaa", 1)])]);
+        state
+            .set_account(
+                &"__GLOBAL_BLOCK_HEIGHT__".to_string(),
+                AccountState {
+                    balance: (MAX_GET_LOGS_BLOCK_RANGE + 10) as u128,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let response = get_logs(
+            state,
+            serde_json::json!({ "fromBlock": "0x0", "toBlock": "latest" }),
+        );
+        assert!(response.result.is_none(), "tavani asan sorgu calismamali");
+        assert_eq!(response.error.expect("hata bekleniyordu")["code"], Value::from(-32005));
+    }
+
+    #[test]
+    fn eth_get_logs_reports_pruned_blocks_instead_of_pretending_they_are_empty() {
+        let state = test_state();
+        // Yükseklik 5 ama yalnız blok 5 arşivde: 1-4 budanmış.
+        seed_logs_chain(&state, &[(5, vec![("0xaaaa", 1)])]);
+
+        let response = get_logs(
+            state,
+            serde_json::json!({ "fromBlock": "0x1", "toBlock": "0x5" }),
+        );
+        assert!(response.result.is_none(), "budanmis aralik bos dizi ile gizlenmemeli");
+        let error = response.error.expect("hata bekleniyordu");
+        assert_eq!(error["code"], Value::from(-32000));
+        assert!(
+            error["message"].as_str().unwrap().contains("pruned"),
+            "mesaj arsiv dugumune yonlendirmeli: {error}"
+        );
+    }
+
+    #[test]
+    fn eth_get_logs_rejects_a_missing_or_malformed_filter() {
+        let state = test_state();
+        let mempool = test_mempool(state.clone());
+        let response = RpcServer::handle_request(
+            rpc_request("eth_getLogs", vec![]),
+            state,
+            mempool,
+            Arc::new(DashMap::new()),
+            default_bridge_manager_arc(),
+            EvmSimulationLimits::default(),
+        );
+        assert!(response.result.is_none());
+        assert_eq!(response.error.expect("hata bekleniyordu")["code"], Value::from(-32602));
     }
 
     #[test]
