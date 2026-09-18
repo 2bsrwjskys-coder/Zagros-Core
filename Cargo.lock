@@ -6842,7 +6842,7 @@ dependencies = [
 
 [[package]]
 name = "zagros-cli"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "bincode",
  "clap",
@@ -6874,7 +6874,7 @@ dependencies = [
 
 [[package]]
 name = "zagros-consensus"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "hex",
  "secp256k1 0.29.1",
@@ -6892,7 +6892,7 @@ dependencies = [
 
 [[package]]
 name = "zagros-crypto"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "ed25519-dalek",
  "hex",
@@ -6905,7 +6905,7 @@ dependencies = [
 
 [[package]]
 name = "zagros-executor"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "alloy-primitives 1.6.1",
  "bincode",
@@ -6932,7 +6932,7 @@ dependencies = [
 
 [[package]]
 name = "zagros-mempool"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "dashmap",
  "portable-atomic",
@@ -6947,7 +6947,7 @@ dependencies = [
 
 [[package]]
 name = "zagros-metrics"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "tracing",
  "tracing-subscriber",
@@ -6956,7 +6956,7 @@ dependencies = [
 
 [[package]]
 name = "zagros-network"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-trait",
  "bincode",
@@ -6984,7 +6984,7 @@ dependencies = [
 
 [[package]]
 name = "zagros-primitives"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "serde",
  "thiserror 1.0.69",
@@ -6992,7 +6992,7 @@ dependencies = [
 
 [[package]]
 name = "zagros-relayer"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "bincode",
  "bytes",
@@ -7028,7 +7028,7 @@ dependencies = [
 
 [[package]]
 name = "zagros-rpc"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "alloy-primitives 0.8.26",
  "bincode",
@@ -7077,7 +7077,7 @@ dependencies = [
 
 [[package]]
 name = "zagros-scheduler"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "bincode",
  "dashmap",
@@ -7094,7 +7094,7 @@ dependencies = [
 
 [[package]]
 name = "zagros-state"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "bincode",
  "dashmap",
@@ -7109,7 +7109,7 @@ dependencies = [
 
 [[package]]
 name = "zagros-storage"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "rocksdb",
  "serde",
@@ -7121,7 +7121,7 @@ dependencies = [
 
 [[package]]
 name = "zagros-tests"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "bincode",
  "ed25519-dalek",
@@ -7143,7 +7143,7 @@ dependencies = [
 
 [[package]]
 name = "zagros-types"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "alloy-primitives 0.8.26",
  "bincode",

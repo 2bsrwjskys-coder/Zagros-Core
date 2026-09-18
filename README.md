@@ -266,6 +266,13 @@ sözleşmesi değildir; iyi bilinen düşük adreslerde (`0x…02` ile `0x…09`
 düğüm tarafından yürütülür ve ABI benzeri seçicilerle çağrılır. Sözleşme
 dağıtımı standart yoldur: `eth_sendRawTransaction`, boş `to` alanı.
 
+**Olay sorgusu.** `eth_getLogs` desteklenir: `fromBlock`/`toBlock` (ya da
+`blockHash`), `address` (dize veya dizi) ve konumsal `topics` filtresi. İki
+kalkan vardır: tek sorgu en çok **5.000 blok** tarar ve **10.000 log** döndürür
+(aşılırsa `-32005`). Budanmış bir aralık boş dizi ile gizlenmez, `-32000` ile
+arşiv düğümüne yönlendirilir (budama penceresi 100.000 blok; tam geçmiş için
+arşiv ucunu kullan).
+
 ## ✅ Test
 
 ```bash
