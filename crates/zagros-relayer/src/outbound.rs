@@ -321,7 +321,9 @@ impl OutboundRelayer {
     /// Tek outbound turu, ağ hatasında panik yok: 1) yeni burn'leri tara
     /// (cursor gap fail-closed), başarısızlar yeniden deneme kuyruğuna; 2) zamanı
     /// gelen yeniden denemeler; 3) bekleyen unlock önerilerini eş imzala.
-    pub async fn poll_once(&self, cursor: &mut u128, now_unix_secs: u64) {
+    /// Dönüş: Zagros RPC'ye bu turda erişildi mi (`false` → döngü geri çekilir).
+    pub async fn poll_once(&self, cursor: &mut u128, now_unix_secs: u64) -> bool {
+        let mut rpc_erisildi = true;
         // 1. Yeni burn'leri tara.
         match self.client.get_recent_bridge_burns(*cursor).await {
             Ok(resp) => match crate::zagros_watcher::parse_burns_response(&resp, *cursor) {
@@ -414,7 +416,10 @@ impl OutboundRelayer {
                     }
                 }
             },
-            Err(e) => tracing::warn!("recent bridge burns alınamadı: {}", e),
+            Err(e) => {
+                rpc_erisildi = false;
+                tracing::warn!("recent bridge burns alınamadı: {}", e);
+            }
         }
 
         // 2. item 13: daha önce başarısız olup yeniden deneme kuyruğuna
@@ -475,15 +480,19 @@ impl OutboundRelayer {
 
         // 4. Hazır çekimler için claim fişi üret ve düğüme bırak.
         //    Ethereum bağlantısı GEREKMEZ, fiş üretimi tamamen zincir dışıdır.
-        let pending = self
-            .client
-            .get_pending_bridge_proposals()
-            .await
-            .unwrap_or_default();
+        let pending = match self.client.get_pending_bridge_proposals().await {
+            Ok(p) => p,
+            Err(_) => {
+                // Uyarı zaten 3. adımda basıldı; burada yalnız erişim bayrağı düşer.
+                rpc_erisildi = false;
+                Vec::new()
+            }
+        };
         let ready = self.build_claim_vouchers(&pending, now_unix_secs);
         if !ready.is_empty() {
             self.submit_claim_vouchers(&ready).await;
         }
+        rpc_erisildi
     }
 
     /// 🌉 FAZ4: Graceful-shutdown destekli outbound döngüsü.
@@ -498,6 +507,12 @@ impl OutboundRelayer {
         tracing::info!("🌉 Outbound tarama imleci {}'den devam ediyor.", cursor);
         let mut ticker =
             tokio::time::interval(std::time::Duration::from_secs(poll_interval_secs.max(1)));
+        // RPC uzun süre erişilemeyince (ağ yolu kesintisi) biriken tikler yol açılınca
+        // peş peşe atılıyordu: 22 dakikalık kesintiden sonra dakikada ~900 istek ve
+        // düğümün 429 yağmuru. Kaçırılan tik birikmez; hata turunda üstel geri çekilme.
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut backoff = std::time::Duration::from_secs(1);
+        let max_backoff = std::time::Duration::from_secs(60);
         tracing::info!(
             "🌉 Outbound relayer döngüsü devrede (interval {}s). Ethereum bağlantısı \
              GEREKMEZ: haberci yalnızca zincir dışı claim fişi imzalar.",
@@ -506,7 +521,19 @@ impl OutboundRelayer {
         loop {
             tokio::select! {
                 _ = ticker.tick() => {
-                    self.poll_once(&mut cursor, crate::now_unix_secs()).await;
+                    if self.poll_once(&mut cursor, crate::now_unix_secs()).await {
+                        backoff = std::time::Duration::from_secs(1);
+                    } else {
+                        tracing::warn!(
+                            "⚠️ Zagros RPC'ye erişilemedi; {:?} sonra yeniden denenecek (geri çekilme).",
+                            backoff
+                        );
+                        tokio::select! {
+                            _ = tokio::time::sleep(backoff) => {}
+                            _ = cancel.changed() => { if *cancel.borrow() { break; } }
+                        }
+                        backoff = crate::ethereum_watcher::next_backoff(backoff, max_backoff);
+                    }
                 }
                 _ = cancel.changed() => {
                     if *cancel.borrow() {
@@ -900,14 +927,63 @@ mod tests {
         assert!(joined.unwrap().is_ok(), "loop task must not panic");
     }
 
-    /// poll_once, ulaşılamaz RPC + köprü yokken bile panik atmadan tamamlanmalı.
+    /// poll_once, ulaşılamaz RPC + köprü yokken bile panik atmadan tamamlanmalı ve
+    /// erişilemediğini bildirmeli.
     #[tokio::test]
     async fn outbound_poll_once_is_resilient_to_a_dead_rpc() {
         let relayer = test_outbound_relayer();
         let mut cursor = 0u128;
-        relayer.poll_once(&mut cursor, 1_700_000_000).await;
-        // Ulaşılamaz RPC → hiçbir kayıt işlenmedi → cursor 0 kalmalı.
+        let erisildi = relayer.poll_once(&mut cursor, 1_700_000_000).await;
+        // Ulaşılamaz RPC → hiçbir kayıt işlenmedi → cursor 0 kalmalı; erişim yok.
         assert_eq!(cursor, 0);
+        assert!(!erisildi, "ölü RPC'de poll_once false dönmeli");
+    }
+
+    /// Ölü RPC'de döngü sıkı dönmemeli: 1 sn aralık + üstel geri çekilme (1, 2, 4 sn)
+    /// ile 3,5 saniyede en çok 3 tur. Önceden, kaçırılan tikler yol açılınca peş peşe
+    /// atılıyor ve düğüme istek yağmuru gidiyordu.
+    #[tokio::test]
+    async fn outbound_run_loop_backs_off_while_rpc_is_dead() {
+        let relayer = std::sync::Arc::new(test_outbound_relayer());
+        let (tx, rx) = tokio::sync::watch::channel(false);
+        let sayac = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let handle = {
+            let relayer = relayer.clone();
+            let sayac = sayac.clone();
+            tokio::spawn(async move {
+                // run_loop'un kendisi poll sayısını dışarı vermez; aynı mantığı
+                // birebir kullanan sarmalayıcı: poll_once her çağrıda sayılır.
+                let mut cursor = 0u128;
+                let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
+                ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                let mut backoff = std::time::Duration::from_secs(1);
+                let mut rx = rx;
+                loop {
+                    tokio::select! {
+                        _ = ticker.tick() => {
+                            sayac.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            if !relayer.poll_once(&mut cursor, crate::now_unix_secs()).await {
+                                tokio::select! {
+                                    _ = tokio::time::sleep(backoff) => {}
+                                    _ = rx.changed() => { if *rx.borrow() { break; } }
+                                }
+                                backoff = crate::ethereum_watcher::next_backoff(backoff, std::time::Duration::from_secs(60));
+                            }
+                        }
+                        _ = rx.changed() => { if *rx.borrow() { break; } }
+                    }
+                }
+            })
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(3_500)).await;
+        tx.send(true).unwrap();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), handle).await;
+        let n = sayac.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(
+            n >= 1 && n <= 3,
+            "ölü RPC'de 3,5 sn içinde 1-3 tur beklenirdi, {} oldu",
+            n
+        );
     }
 
     /// Restart simülasyonu: kalıcı imleç 5000'den devam etmeli, 0'a dönmemeli.

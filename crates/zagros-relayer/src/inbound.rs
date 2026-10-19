@@ -444,6 +444,8 @@ impl InboundRelayer {
         let mut backoff = Duration::from_secs(1);
         let max_backoff = Duration::from_secs(60);
         let mut ticker = tokio::time::interval(Duration::from_secs(poll_interval_secs.max(1)));
+        // Kaçırılan tikler birikmesin (uzun kesinti sonrası istek yağmuru olmasın).
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         tracing::info!(
             "🌉 Ethereum event pump devrede (interval {}s, onay derinliği {}, \
              başlangıç bloğu {}, pencere {} blok).",

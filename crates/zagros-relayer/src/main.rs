@@ -245,6 +245,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         handles.push(tokio::spawn(async move {
             const HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
             let mut ticker = tokio::time::interval(HEARTBEAT_INTERVAL);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {
                 tokio::select! {
                     _ = ticker.tick() => {
@@ -291,6 +292,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         handles.push(tokio::spawn(async move {
             const SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(86_400);
             let mut ticker = tokio::time::interval(SWEEP_INTERVAL);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {
                 tokio::select! {
                     _ = ticker.tick() => {
